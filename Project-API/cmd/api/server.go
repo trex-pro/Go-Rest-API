@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"project-api/internal/api/middlewares"
 	"strings"
+	"time"
 )
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +62,16 @@ func execHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		w.Write([]byte("This is EXECS GET method route."))
 	case http.MethodPost:
+		fmt.Println("Query:", r.URL.Query())
+		fmt.Println("Name:", r.URL.Query().Get("name"))
+		fmt.Println("Age:", r.URL.Query().Get("age"))
+		fmt.Println("City:", r.URL.Query().Get("city"))
+
+		// Parse From Data for x-www-form-urlencoded.
+		err := r.ParseForm()
+		if err != nil {
+			return
+		}
 		w.Write([]byte("This is EXECS POST method route."))
 	case http.MethodPut:
 		w.Write([]byte("This is EXECS PUT method route."))
@@ -90,10 +102,24 @@ func main() {
 		MinVersion: tls.VersionTLS12,
 	}
 
+	// Initialize Rate Limiter.
+	rl := middlewares.RateLimiter(5, time.Minute)
+
+	// HPP Options.
+	hppOptions := middlewares.HPPOptions{
+		CheckBody:                true,
+		CheckBodyforConetentType: "application/x-www-form-urlencoded",
+		CheckQuery:               true,
+		WhiteList:                []string{"sortBy", "sortOrder", "name", "age", "city", "class"},
+	}
+
+	// Middlewares.
+	secureMux := middlewares.HPP(hppOptions)(rl.RateLimiterMiddleware(middlewares.Compression(middlewares.ResponseTimer(middlewares.SecurityHeader(middlewares.CORS(mux))))))
+
 	// Custom HTTPS Server.
 	server := http.Server{
 		Addr:      fmt.Sprintf(":%d", port),
-		Handler:   mux,
+		Handler:   secureMux,
 		TLSConfig: tlsConfig,
 	}
 
