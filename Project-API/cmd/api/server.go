@@ -5,12 +5,26 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"project-api/internal/api/middlewares"
 	"project-api/internal/api/router"
+	"project-api/internal/repositories/sqlconnect"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	port := 3000
+	err := godotenv.Load()
+	if err != nil {
+		return
+	}
+	_, err = sqlconnect.ConnectDB()
+	if err != nil {
+		fmt.Println("DB Error:", err)
+		return
+	}
+
+	port := os.Getenv("SERVER_PORT")
 
 	// Load TLS Certificate and Key.
 	cert := "cert.pem"
@@ -45,13 +59,13 @@ func main() {
 
 	// Custom HTTPS Server.
 	server := http.Server{
-		Addr:      fmt.Sprintf(":%d", port),
+		Addr:      port,
 		Handler:   secureMux,
 		TLSConfig: tlsConfig,
 	}
 
-	fmt.Println("Server is running on port:", port)
-	err := server.ListenAndServeTLS(cert, key)
+	fmt.Println("Server is running on port", port)
+	err = server.ListenAndServeTLS(cert, key)
 	if err != nil {
 		log.Fatalln("Error starting server:", err)
 	}
