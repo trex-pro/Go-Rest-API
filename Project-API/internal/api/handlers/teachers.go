@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
+	"project-api/internal/api/helpers"
 	"project-api/internal/models"
 	"project-api/internal/repositories/sqlconnect"
 	"strconv"
@@ -13,7 +15,7 @@ func GETTeachersHandler(w http.ResponseWriter, r *http.Request) {
 	var teachers []models.Teacher
 	teachers, err := sqlconnect.GetTeachersDBHandler(teachers, r)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -42,7 +44,7 @@ func GETTeacherByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	teacher, err := sqlconnect.GETTeacherByIDDBHandler(id)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -52,16 +54,55 @@ func GETTeacherByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 func POSTTeachersHandler(w http.ResponseWriter, r *http.Request) {
 	var newTeachers []models.Teacher
-	err := json.NewDecoder(r.Body).Decode(&newTeachers)
+	var rawTeachers []map[string]any
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Error Reading Request", http.StatusInternalServerError)
+		return
+	}
+
+	err = json.Unmarshal(body, &rawTeachers)
 	if err != nil {
 		log.Printf("Error: %v", err)
 		http.Error(w, "Invalid Request", http.StatusBadRequest)
 		return
 	}
 
-	addedTeachers, err := sqlconnect.POSTTeacherDBHandler(newTeachers)
+	fields := helpers.GetFieldNames(models.Teacher{})
+
+	allowedfields := make(map[string]struct{})
+	for _, field := range fields {
+		allowedfields[field] = struct{}{}
+	}
+
+	for _, teacher := range rawTeachers {
+		for key := range teacher {
+			_, ok := allowedfields[key]
+			if !ok {
+				http.Error(w, "Only use for Allowed Fields.", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	err = json.Unmarshal(body, &newTeachers)
 	if err != nil {
 		log.Printf("Error: %v", err)
+		http.Error(w, "Invalid Request", http.StatusBadRequest)
+		return
+	}
+
+	for _, teacher := range newTeachers {
+		err := helpers.CheckingBlankFields(teacher)
+		if err != nil {
+			return
+		}
+	}
+
+	addedTeachers, err := sqlconnect.POSTTeacherDBHandler(newTeachers)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -99,7 +140,7 @@ func PUTTeachersHandler(w http.ResponseWriter, r *http.Request) {
 
 	updatedTeacherFromDB, err := sqlconnect.PUTTeacherDBHandler(id, updatedTeacher)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -119,7 +160,7 @@ func PATCHTeachersHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = sqlconnect.PATCHTeachersDBHandler(updates)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -143,7 +184,7 @@ func PATCHTeacherByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	updatedTeacher, err := sqlconnect.PATCHTeacherByIDDBHandler(id, updates)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -163,7 +204,7 @@ func DELETETeacherHandler(w http.ResponseWriter, r *http.Request) {
 
 	deletedIds, err := sqlconnect.DELETETeacherDBHandler(ids)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -189,7 +230,7 @@ func DELETETeacherByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = sqlconnect.DELETETeacherByIDDbHandler(id)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
