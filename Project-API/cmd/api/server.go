@@ -54,8 +54,8 @@ func main() {
 	// 	rl.RateLimiterMiddleware,
 	// 	middlewares.CORS)
 
-	router := router.Router()
-	secureMux := middlewares.SecurityHeader(router)
+	routers := router.MainRouter()
+	secureMux := middlewares.SecurityHeader(routers)
 
 	// Custom HTTPS Server.
 	server := http.Server{
