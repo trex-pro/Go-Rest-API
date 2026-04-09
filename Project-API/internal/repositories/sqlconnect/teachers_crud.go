@@ -12,13 +12,13 @@ import (
 	"strings"
 )
 
-func GetTeachersDBHandler(teachers []models.Teacher, r *http.Request) ([]models.Teacher, error) {
+func GETTeachersDBHandler(teachers []models.Teacher, r *http.Request) ([]models.Teacher, error) {
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("SELECT * FROM teachers WHERE 1=1")
 	var args []any
 
-	args = getTeacherfilter(r, &queryBuilder)
-	getTeacherSort(r, &queryBuilder)
+	args = utils.GetTeacherFilter(r, &queryBuilder)
+	utils.GetTeacherSort(r, &queryBuilder)
 
 	db, err := ConnectDB()
 	if err != nil {
@@ -42,55 +42,6 @@ func GetTeachersDBHandler(teachers []models.Teacher, r *http.Request) ([]models.
 		teachers = append(teachers, teacher)
 	}
 	return teachers, nil
-}
-
-func getTeacherfilter(r *http.Request, queryBuilder *strings.Builder) []any {
-	var args []any
-	params := []string{"first_name", "last_name", "email", "class", "subject"}
-	for _, dbField := range params {
-		value := r.URL.Query().Get(dbField)
-		if value != "" {
-			queryBuilder.WriteString(" AND " + dbField + " = ?")
-			args = append(args, value)
-		}
-	}
-	return args
-}
-
-func getTeacherSort(r *http.Request, queryBuilder *strings.Builder) {
-	sortParams := r.URL.Query()["sortby"]
-	if len(sortParams) > 0 {
-		queryBuilder.WriteString(" ORDER BY")
-		for i, param := range sortParams {
-			parts := strings.Split(param, ":")
-			if len(parts) != 2 {
-				continue
-			}
-			field, order := parts[0], parts[1]
-			if !isValidSortField(field) && !isValidSortOrder(order) {
-				continue
-			}
-			if i > 0 {
-				queryBuilder.WriteString(", ")
-			}
-			queryBuilder.WriteString(" " + field + " " + order)
-		}
-	}
-}
-
-func isValidSortOrder(order string) bool {
-	return order == "asc" || order == "desc"
-}
-
-func isValidSortField(field string) bool {
-	vaildFields := map[string]bool{
-		"first_name": true,
-		"last_name":  true,
-		"email":      true,
-		"class":      true,
-		"subject":    true,
-	}
-	return vaildFields[field]
 }
 
 func GETTeacherByIDDBHandler(id int) (models.Teacher, error) {
@@ -121,7 +72,7 @@ func POSTTeacherDBHandler(newTeachers []models.Teacher) ([]models.Teacher, error
 	defer db.Close()
 
 	// stmt, err := db.Prepare("INSERT INTO teachers (first_name, last_name, email, class, subject) VALUES (?,?,?,?,?)")
-	stmt, err := db.Prepare(generateInsertQuery(models.Teacher{}))
+	stmt, err := db.Prepare(utils.GenerateInsertQuery("teachers", models.Teacher{}))
 	if err != nil {
 		return nil, utils.ErrorHandler(err, "Error Adding Data to DB.")
 	}
@@ -130,7 +81,7 @@ func POSTTeacherDBHandler(newTeachers []models.Teacher) ([]models.Teacher, error
 	addedTeachers := make([]models.Teacher, len(newTeachers))
 	for i, newTeacher := range newTeachers {
 		// resp, err := stmt.Exec(newTeacher.FirstName, newTeacher.LastName, newTeacher.Email, newTeacher.Class, newTeacher.Subject)
-		values := getStructValues(newTeacher)
+		values := utils.GetStructValues(newTeacher)
 		resp, err := stmt.Exec(values...)
 		if err != nil {
 			return nil, utils.ErrorHandler(err, "Error Adding Data to DB.")
@@ -143,39 +94,6 @@ func POSTTeacherDBHandler(newTeachers []models.Teacher) ([]models.Teacher, error
 		addedTeachers[i] = newTeacher
 	}
 	return addedTeachers, nil
-}
-
-func generateInsertQuery(model any) string {
-	modelType := reflect.TypeOf(model)
-	var columns, placeholders string
-	for i := 0; i < modelType.NumField(); i++ {
-		dbTag := modelType.Field(i).Tag.Get("db")
-		fmt.Println("dbTag:", dbTag)
-		dbTag = strings.TrimSuffix(dbTag, ",omitempty")
-		if dbTag != "" && dbTag != "id" {
-			if columns != "" {
-				columns += ", "
-				placeholders += ", "
-			}
-			columns += dbTag
-			placeholders += "?"
-		}
-	}
-	return fmt.Sprintf("INSERT into teachers (%s) VALUES (%s)", columns, placeholders)
-}
-
-func getStructValues(model any) []any {
-	modelValue := reflect.ValueOf(model)
-	modelType := modelValue.Type()
-	values := []any{}
-	for i := 0; i < modelType.NumField(); i++ {
-		dbTag := modelType.Field(i).Tag.Get("db")
-		if dbTag != "" && dbTag != "id,omitempty" {
-			values = append(values, modelValue.Field(i).Interface())
-		}
-	}
-	log.Println("Values:", values)
-	return values
 }
 
 func PUTTeacherDBHandler(id int, updatedTeacher models.Teacher) (models.Teacher, error) {
@@ -232,7 +150,7 @@ func PATCHTeachersDBHandler(updates []map[string]any) error {
 			&teacherFromDB.ID, &teacherFromDB.FirstName, &teacherFromDB.LastName, &teacherFromDB.Email, &teacherFromDB.Class, &teacherFromDB.Subject)
 		if err != nil {
 			tx.Rollback()
-			if err != sql.ErrNoRows {
+			if err == sql.ErrNoRows {
 				return utils.ErrorHandler(err, "Teacher Not Found in DB.")
 			}
 			return utils.ErrorHandler(err, "Error Updating Data to DB.")
@@ -257,7 +175,7 @@ func PATCHTeachersDBHandler(updates []map[string]any) error {
 						} else {
 							tx.Rollback()
 							log.Printf("Error: Connot convert %v to %v\n", val.Type(), fieldVal.Type())
-							return utils.ErrorHandler(err, "Error Updating Data to DB.")
+							return utils.ErrorHandler(fmt.Errorf("cannot convert %v to %v", val.Type(), fieldVal.Type()), "Error Updating Data to DB.")
 						}
 					}
 					break
@@ -271,12 +189,12 @@ func PATCHTeachersDBHandler(updates []map[string]any) error {
 			tx.Rollback()
 			return utils.ErrorHandler(err, "Error Updating Data to DB.")
 		}
-
-		err = tx.Commit()
-		if err != nil {
-			return utils.ErrorHandler(err, "Error Updating Data to DB.")
-		}
 	}
+	err = tx.Commit()
+	if err != nil {
+		return utils.ErrorHandler(err, "Error Updating Data to DB.")
+	}
+
 	return nil
 }
 
@@ -319,7 +237,7 @@ func PATCHTeacherByIDDBHandler(id int, updates map[string]any) (models.Teacher, 
 	return existingTeacher, nil
 }
 
-func DELETETeacherDBHandler(ids []int) ([]int, error) {
+func DELETETeachersDBHandler(ids []int) ([]int, error) {
 	db, err := ConnectDB()
 	if err != nil {
 		return nil, utils.ErrorHandler(err, "Error Deleting Data from DB.")
@@ -361,7 +279,7 @@ func DELETETeacherDBHandler(ids []int) ([]int, error) {
 	return deletedIds, nil
 }
 
-func DELETETeacherByIDDbHandler(id int) error {
+func DELETETeacherByIDDBHandler(id int) error {
 	db, err := ConnectDB()
 	if err != nil {
 		return utils.ErrorHandler(err, "Error Deleting Data from DB.")
@@ -382,4 +300,40 @@ func DELETETeacherByIDDbHandler(id int) error {
 		return utils.ErrorHandler(err, "Teacher Not Found in DB.")
 	}
 	return nil
+}
+
+func GETStudentsByTeacherIDDBHandler(teacherID string) ([]models.Student, error) {
+	db, err := ConnectDB()
+	if err != nil {
+		log.Println(err)
+		return nil, utils.ErrorHandler(err, "Error Retrieving Data from DB.")
+	}
+	defer db.Close()
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString("SELECT id, first_name, last_name, email, class FROM students WHERE class = (SELECT class from teachers WHERE id = ?)")
+	query := queryBuilder.String()
+	rows, err := db.Query(query, teacherID)
+	if err != nil {
+		log.Println(err)
+		return nil, utils.ErrorHandler(err, "Error Retrieving Data from DB.")
+	}
+	defer rows.Close()
+
+	var students []models.Student
+	for rows.Next() {
+		var student models.Student
+		err := rows.Scan(&student.ID, &student.FirstName, &student.LastName, &student.Email, &student.Class)
+		if err != nil {
+			log.Println(err)
+			return nil, utils.ErrorHandler(err, "Error Retrieving Data from DB.")
+		}
+		students = append(students, student)
+	}
+	err = rows.Err()
+	if err != nil {
+		log.Println(err)
+		return nil, utils.ErrorHandler(err, "Error Retrieving Data from DB.")
+	}
+	return students, nil
 }
