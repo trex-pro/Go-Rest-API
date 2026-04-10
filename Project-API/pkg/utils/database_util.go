@@ -56,7 +56,7 @@ func GetStructValues(model any) []any {
 	return values
 }
 
-func getStudentFilter(r *http.Request, queryBuilder *strings.Builder) []any {
+func GetStudentFilter(r *http.Request, queryBuilder *strings.Builder) []any {
 	var args []any
 	params := []string{"first_name", "last_name", "email", "class", "subject"}
 	for _, dbField := range params {
@@ -69,7 +69,7 @@ func getStudentFilter(r *http.Request, queryBuilder *strings.Builder) []any {
 	return args
 }
 
-func getStudentSort(r *http.Request, queryBuilder *strings.Builder) {
+func GetStudentSort(r *http.Request, queryBuilder *strings.Builder) {
 	sortParams := r.URL.Query()["sortby"]
 	if len(sortParams) > 0 {
 		queryBuilder.WriteString(" ORDER BY")
@@ -104,6 +104,40 @@ func GetTeacherFilter(r *http.Request, queryBuilder *strings.Builder) []any {
 }
 
 func GetTeacherSort(r *http.Request, queryBuilder *strings.Builder) {
+	sortParams := r.URL.Query()["sortby"]
+	if len(sortParams) > 0 {
+		queryBuilder.WriteString(" ORDER BY")
+		for i, param := range sortParams {
+			parts := strings.Split(param, ":")
+			if len(parts) != 2 {
+				continue
+			}
+			field, order := parts[0], parts[1]
+			if isValidSortField(field) && isValidSortOrder(order) {
+				continue
+			}
+			if i > 0 {
+				queryBuilder.WriteString(", ")
+			}
+			queryBuilder.WriteString(" " + field + " " + order)
+		}
+	}
+}
+
+func GetExecFilter(r *http.Request, queryBuilder *strings.Builder) []any {
+	var args []any
+	params := []string{"id", "first_name", "last_name", "email", "username", "user_created_at", "inactive_status", "role"}
+	for _, dbField := range params {
+		value := r.URL.Query().Get(dbField)
+		if value != "" {
+			queryBuilder.WriteString(" AND " + dbField + " = ?")
+			args = append(args, value)
+		}
+	}
+	return args
+}
+
+func GetExecSort(r *http.Request, queryBuilder *strings.Builder) {
 	sortParams := r.URL.Query()["sortby"]
 	if len(sortParams) > 0 {
 		queryBuilder.WriteString(" ORDER BY")

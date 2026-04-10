@@ -17,8 +17,8 @@ func GETStudentsDBHandler(students []models.Student, r *http.Request) ([]models.
 	queryBuilder.WriteString("SELECT * FROM students WHERE 1=1")
 	var args []any
 
-	args = utils.GetTeacherFilter(r, &queryBuilder)
-	utils.GetTeacherSort(r, &queryBuilder)
+	args = utils.GetStudentFilter(r, &queryBuilder)
+	utils.GetStudentSort(r, &queryBuilder)
 
 	db, err := ConnectDB()
 	if err != nil {
