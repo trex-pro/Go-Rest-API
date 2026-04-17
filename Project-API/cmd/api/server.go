@@ -9,6 +9,7 @@ import (
 	"project-api/internal/api/middlewares"
 	"project-api/internal/api/router"
 	"project-api/internal/repositories/sqlconnect"
+	"project-api/pkg/utils"
 
 	"github.com/joho/godotenv"
 )
@@ -20,7 +21,7 @@ func main() {
 	}
 	_, err = sqlconnect.ConnectDB()
 	if err != nil {
-		fmt.Println("DB Error:", err)
+		utils.ErrorHandler(err, "Error Connecting to DB")
 		return
 	}
 

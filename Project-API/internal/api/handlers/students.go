@@ -151,6 +151,7 @@ func PUTStudentsHandler(w http.ResponseWriter, r *http.Request) {
 
 func PATCHStudentsHandler(w http.ResponseWriter, r *http.Request) {
 	var updates []map[string]any
+	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(&updates)
 	if err != nil {
 		log.Printf("Error: %v", err)
@@ -176,6 +177,7 @@ func PATCHStudentByIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var updates map[string]any
+	defer r.Body.Close()
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		log.Printf("Error: %v", err)
 		http.Error(w, "Error in Request Payload", http.StatusBadRequest)
@@ -195,6 +197,7 @@ func PATCHStudentByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 func DELETEStudentsHandler(w http.ResponseWriter, r *http.Request) {
 	var ids []int
+	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(&ids)
 	if err != nil {
 		log.Printf("Error: %v", err)

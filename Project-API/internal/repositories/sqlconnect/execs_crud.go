@@ -1,7 +1,11 @@
 package sqlconnect
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"project-api/internal/models"
@@ -9,6 +13,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/argon2"
 )
 
 func GETExecsDBHandler(Execs []models.Exec, r *http.Request) ([]models.Exec, error) {
@@ -79,6 +85,21 @@ func POSTExecsDBHandler(newExecs []models.Exec) ([]models.Exec, error) {
 
 	addedExecs := make([]models.Exec, len(newExecs))
 	for i, newExec := range newExecs {
+		// Password Hashing.
+		if newExec.Password == "" {
+			return nil, utils.ErrorHandler(errors.New("Blank Password"), "Please Enter Password.")
+		}
+		salt := make([]byte, 16)
+		_, err := rand.Read(salt)
+		if err != nil {
+			return nil, utils.ErrorHandler(errors.New("Failed to Generate Salt"), "Error Addding Data to DB.")
+		}
+		hash := argon2.IDKey([]byte(newExec.Password), salt, 1, 64*1024, 4, 32)
+		saltBase64 := base64.StdEncoding.EncodeToString(salt)
+		hashBase64 := base64.StdEncoding.EncodeToString(hash)
+		encodedHash := fmt.Sprintf("%s.%s", saltBase64, hashBase64)
+		newExec.Password = encodedHash
+
 		values := utils.GetStructValues(newExec)
 		resp, err := stmt.Exec(values...)
 		if err != nil {
@@ -232,4 +253,23 @@ func DELETEExecByIDDBHandler(id int) error {
 		return utils.ErrorHandler(err, "Exec Not Found in DB.")
 	}
 	return nil
+}
+
+func GetUserByUsername(req models.Exec) (*models.Exec, error) {
+	db, err := ConnectDB()
+	if err != nil {
+		return nil, utils.ErrorHandler(err, "Error Connecting to DB.")
+	}
+	defer db.Close()
+
+	user := &models.Exec{}
+	err = db.QueryRow("SELECT id, username, password, inactive_status, role FROM execs WHERE username = ?", req.Username).Scan(
+		&user.ID, &user.Username, &user.Password, &user.InactiveStatus, &user.Role)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, utils.ErrorHandler(err, "User Not Found")
+		}
+		return nil, utils.ErrorHandler(err, "User Not Found")
+	}
+	return user, nil
 }

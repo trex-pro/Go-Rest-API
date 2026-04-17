@@ -5,10 +5,13 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"project-api/internal/api/helpers"
 	"project-api/internal/models"
 	"project-api/internal/repositories/sqlconnect"
+	"project-api/pkg/utils"
 	"strconv"
+	"time"
 )
 
 func GETExecsHandler(w http.ResponseWriter, r *http.Request) {
@@ -190,4 +193,88 @@ func DELETEExecByIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	var req models.Exec
+	// 1. Data Validation
+	defer r.Body.Close()
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Data Validation Error", http.StatusBadRequest)
+		return
+	}
+	if req.Username == "" || req.Password == "" {
+		http.Error(w, "Username and Password are Required", http.StatusBadRequest)
+		return
+	}
+
+	// 2. Search for user, if user exists...
+	user, err := sqlconnect.GetUserByUsername(req)
+	if err != nil {
+		http.Error(w, "Invalid Credentials", http.StatusInternalServerError)
+		return
+	}
+
+	// 3. Is user active
+	if user.InactiveStatus {
+		http.Error(w, "Account is Inactive", http.StatusForbidden)
+		return
+	}
+
+	// 4. Verify Password
+	err = utils.Password(user, req)
+	if err != nil {
+		utils.ErrorHandler(err, "Password Verifcation Error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 5. Generate Token
+	token, err := utils.JWT(user)
+	if err != nil {
+		utils.ErrorHandler(err, "Failed to Generate Token")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 6. Send token as Response or a Cookie
+	expiry, err := time.ParseDuration(os.Getenv("JWT_EXPIRY"))
+	if err != nil {
+		utils.ErrorHandler(err, "JWT Expiration Error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "JWT",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Expires:  time.Now().Add(expiry),
+	})
+	resp := struct {
+		Token string `json:"token"`
+		ID    int    `json:"id"`
+	}{
+		Token: token,
+		ID:    user.ID,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "JWT",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Expires:  time.Unix(0, 0),
+	})
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`Message: Logged Out Successfully.`))
 }

@@ -131,6 +131,7 @@ func PUTTeachersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var updatedTeacher models.Teacher
+	defer r.Body.Close()
 	if err := json.NewDecoder(r.Body).Decode(&updatedTeacher); err != nil {
 		log.Printf("Error: %v", err)
 		http.Error(w, "Error in Request Payload", http.StatusBadRequest)
@@ -151,6 +152,7 @@ func PUTTeachersHandler(w http.ResponseWriter, r *http.Request) {
 
 func PATCHTeachersHandler(w http.ResponseWriter, r *http.Request) {
 	var updates []map[string]any
+	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(&updates)
 	if err != nil {
 		log.Printf("Error: %v", err)
@@ -176,6 +178,7 @@ func PATCHTeacherByIDHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var updates map[string]any
+	defer r.Body.Close()
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		log.Printf("Error: %v", err)
 		http.Error(w, "Error in Request Payload", http.StatusBadRequest)
@@ -195,6 +198,7 @@ func PATCHTeacherByIDHandler(w http.ResponseWriter, r *http.Request) {
 
 func DELETETeachersHandler(w http.ResponseWriter, r *http.Request) {
 	var ids []int
+	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(&ids)
 	if err != nil {
 		log.Printf("Error: %v", err)
