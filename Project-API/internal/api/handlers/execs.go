@@ -275,6 +275,11 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 		Expires:  time.Unix(0, 0),
 	})
+	resp := struct {
+		Message string `json:"message"`
+	}{
+		Message: "Logged Out Successfully",
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`Message: Logged Out Successfully.`))
+	json.NewEncoder(w).Encode(resp)
 }
