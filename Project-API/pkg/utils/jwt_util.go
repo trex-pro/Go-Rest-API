@@ -2,20 +2,19 @@ package utils
 
 import (
 	"os"
-	"project-api/internal/models"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func JWT(user *models.Exec) (string, error) {
+func JWT(id, username, role string) (string, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	jwtExpiry := os.Getenv("JWT_EXPIRY")
 
 	claims := jwt.MapClaims{
-		"id":       user.ID,
-		"username": user.Username,
-		"role":     user.Role,
+		"id":       id,
+		"username": username,
+		"role":     role,
 	}
 
 	if jwtExpiry != "" {

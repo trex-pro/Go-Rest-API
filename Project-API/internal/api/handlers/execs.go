@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -41,7 +42,7 @@ func GETExecByIDHandler(w http.ResponseWriter, r *http.Request) {
 	// Handling Path Param.
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		log.Printf("Error: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -67,7 +68,6 @@ func POSTExecsHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = json.Unmarshal(body, &rawExecs)
 	if err != nil {
-		log.Printf("Error: %v", err)
 		http.Error(w, "Invalid Request", http.StatusBadRequest)
 		return
 	}
@@ -223,17 +223,16 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Verify Password
-	err = utils.Password(user, req)
+	err = utils.VerifyPassword(req.Password, user.Password)
 	if err != nil {
-		utils.ErrorHandler(err, "Password Verifcation Error")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// 5. Generate Token
-	token, err := utils.JWT(user)
+	idStr := r.PathValue("id")
+	token, err := utils.JWT(idStr, user.Username, user.Role)
 	if err != nil {
-		utils.ErrorHandler(err, "Failed to Generate Token")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -241,7 +240,6 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	// 6. Send token as Response or a Cookie
 	expiry, err := time.ParseDuration(os.Getenv("JWT_EXPIRY"))
 	if err != nil {
-		utils.ErrorHandler(err, "JWT Expiration Error")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
@@ -279,6 +277,57 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"message"`
 	}{
 		Message: "Logged Out Successfully",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func UpdatePasswordHandler(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	userID, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid Exec ID", http.StatusBadRequest)
+		return
+	}
+
+	var req models.UpdatePasswordRequest
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid Request Body", http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		utils.ErrorHandler(errors.New("Please Enter Password"), "Please Enter Password")
+		http.Error(w, "Please Enter Password", http.StatusBadRequest)
+		return
+	}
+
+	_, token, err := sqlconnect.UpdatePasswordDBHandler(userID, idStr, req.CurrentPassword, req.NewPassword)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	expiry, err := time.ParseDuration(os.Getenv("JWT_EXPIRY"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "JWT",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Expires:  time.Now().Add(expiry),
+	})
+	resp := struct {
+		Message string `json:"message"`
+	}{
+		Message: "Password Updated Successfully",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

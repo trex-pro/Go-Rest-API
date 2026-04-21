@@ -1,11 +1,7 @@
 package sqlconnect
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"project-api/internal/models"
@@ -13,8 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-
-	"golang.org/x/crypto/argon2"
+	"time"
 )
 
 func GETExecsDBHandler(Execs []models.Exec, r *http.Request) ([]models.Exec, error) {
@@ -86,19 +81,10 @@ func POSTExecsDBHandler(newExecs []models.Exec) ([]models.Exec, error) {
 	addedExecs := make([]models.Exec, len(newExecs))
 	for i, newExec := range newExecs {
 		// Password Hashing.
-		if newExec.Password == "" {
-			return nil, utils.ErrorHandler(errors.New("Blank Password"), "Please Enter Password.")
-		}
-		salt := make([]byte, 16)
-		_, err := rand.Read(salt)
+		newExec.Password, err = utils.HashPassword(newExec.Password)
 		if err != nil {
-			return nil, utils.ErrorHandler(errors.New("Failed to Generate Salt"), "Error Addding Data to DB.")
+			return nil, utils.ErrorHandler(err, "Error Adding Data to DB.")
 		}
-		hash := argon2.IDKey([]byte(newExec.Password), salt, 1, 64*1024, 4, 32)
-		saltBase64 := base64.StdEncoding.EncodeToString(salt)
-		hashBase64 := base64.StdEncoding.EncodeToString(hash)
-		encodedHash := fmt.Sprintf("%s.%s", saltBase64, hashBase64)
-		newExec.Password = encodedHash
 
 		values := utils.GetStructValues(newExec)
 		resp, err := stmt.Exec(values...)
@@ -272,4 +258,49 @@ func GetUserByUsername(req models.Exec) (*models.Exec, error) {
 		return nil, utils.ErrorHandler(err, "User Not Found")
 	}
 	return user, nil
+}
+
+func UpdatePasswordDBHandler(userID int, id, currentPassword, newPassword string) (string, string, error) {
+	db, err := ConnectDB()
+	if err != nil {
+		return "", "", utils.ErrorHandler(err, "Error Connecting to DB.")
+	}
+	defer db.Close()
+
+	var username string
+	var userPassword string
+	var role string
+
+	// 1. Check if user exists.
+	err = db.QueryRow("SELECT username, password, role FROM execs WHERE id = ?", userID).Scan(&username, &userPassword, &role)
+	if err != nil {
+		return "", "", utils.ErrorHandler(err, "Error Retrieving Data from DB.")
+	}
+
+	// 2. Verify Current Password.
+	err = utils.VerifyPassword(currentPassword, userPassword)
+	if err != nil {
+		return "", "", utils.ErrorHandler(err, "Incorrect Password")
+	}
+
+	// 3. Hash new password and save into DB.
+	hashedPassword, err := utils.HashPassword(newPassword)
+	if err != nil {
+		return "", "", utils.ErrorHandler(err, "Error Adding Data to DB.")
+	}
+
+	// 3. Log when password was updated.
+	currentTime := time.Now().Format(time.RFC3339)
+	_, err = db.Exec("UPDATE execs SET password = ?, password_changed_at = ? WHERE id = ?", hashedPassword, currentTime, userID)
+	if err != nil {
+		return "", "", utils.ErrorHandler(err, "Failed to Update Passwword")
+	}
+
+	// 4. Issuing a new JWT token
+	token, err := utils.JWT(id, username, role)
+	if err != nil {
+		return "", token, utils.ErrorHandler(err, "Password Updated, Failed to Update Token")
+	}
+
+	return hashedPassword, token, nil
 }
