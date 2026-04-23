@@ -1,15 +1,22 @@
 package sqlconnect
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"project-api/internal/models"
 	"project-api/pkg/utils"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-mail/mail/v2"
 )
 
 func GETExecsDBHandler(Execs []models.Exec, r *http.Request) ([]models.Exec, error) {
@@ -303,4 +310,91 @@ func UpdatePasswordDBHandler(userID int, id, currentPassword, newPassword string
 	}
 
 	return hashedPassword, token, nil
+}
+
+func ForgotPasswordDBHandler(email string) error {
+	db, err := ConnectDB()
+	if err != nil {
+		return utils.ErrorHandler(err, "Error Connecting to DB.")
+	}
+	defer db.Close()
+
+	var exec models.Exec
+	err = db.QueryRow("SELECT id FROM execs WHERE email = ?", email).Scan(&exec.ID)
+	if err != nil {
+		return utils.ErrorHandler(err, "Error Retrieving Data from DB.")
+	}
+
+	duration, err := time.ParseDuration(os.Getenv("RESET_CODE_EXPIRY"))
+	if err != nil {
+		return utils.ErrorHandler(err, "Failed to Send Password Reset Email")
+	}
+	codeExpiry := time.Now().Add(duration).Format(time.RFC3339)
+	mins := duration.Minutes()
+
+	code := make([]byte, 32)
+	_, err = rand.Read(code)
+	if err != nil {
+		return utils.ErrorHandler(err, "Failed to Send Password Reset Email")
+	}
+	codeString := hex.EncodeToString(code)
+	hashedCode := sha256.Sum256(code)
+	hashedCodeString := hex.EncodeToString(hashedCode[:])
+
+	_, err = db.Exec("UPDATE execs SET password_reset_code = ?, password_code_expiry = ? WHERE id = ?", hashedCodeString, codeExpiry, exec.ID)
+	if err != nil {
+		return utils.ErrorHandler(err, "Failed to Send Password Reset Email")
+	}
+
+	//  Sending Reset Email.
+	resetURL := fmt.Sprintf("https://localhost:3000/execs/resetpassword/reset/%s", codeString)
+	message := fmt.Sprintf("Reset your password using the following link: \n%s\nIf you didn't request a password reset please contact support@school.com \nThe link is only valid for %.f minutes.", resetURL, mins)
+
+	m := mail.NewMessage()
+	m.SetHeader("From", "settings@school.com")
+	m.SetHeader("To", email)
+	m.SetHeader("Subject", "Password Reset Link")
+	m.SetBody("text/plain", message)
+
+	d := mail.NewDialer("localhost", 1025, "", "")
+	err = d.DialAndSend(m)
+	if err != nil {
+		return utils.ErrorHandler(err, "Failed to Send Password Reset Email")
+	}
+	return nil
+}
+
+func ResetPasswordDBHandler(codeString, newPassword string) error {
+	db, err := ConnectDB()
+	if err != nil {
+		return utils.ErrorHandler(err, "Error Connecting to DB.")
+	}
+	defer db.Close()
+
+	code, err := hex.DecodeString(codeString)
+	if err != nil {
+		return utils.ErrorHandler(err, "Failed to Reset Password")
+	}
+	hashedCode := sha256.Sum256(code)
+	hashedCodeString := hex.EncodeToString(hashedCode[:])
+	currentTime := time.Now().Format(time.RFC3339)
+
+	var exec models.Exec
+	err = db.QueryRow("SELECT id, email FROM execs WHERE password_reset_code = ? AND password_code_expiry > ?", hashedCodeString, currentTime).Scan(
+		&exec.ID, &exec.Email)
+	if err != nil {
+		return utils.ErrorHandler(err, "Invalid/Expired Reset Code")
+	}
+
+	// Hashing New Password and Updating the DB.
+	hashedPassword, err := utils.HashPassword(newPassword)
+	if err != nil {
+		return utils.ErrorHandler(err, "Failed to Reset Password")
+	}
+	_, err = db.Exec("UPDATE execs SET password = ?, password_changed_at = ? ,password_reset_code = NULL, password_code_expiry = NULL  WHERE id = ?",
+		hashedPassword, currentTime, exec.ID)
+	if err != nil {
+		return utils.ErrorHandler(err, "Failed to Reset Password")
+	}
+	return nil
 }

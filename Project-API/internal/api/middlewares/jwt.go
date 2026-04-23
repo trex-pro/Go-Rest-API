@@ -58,6 +58,6 @@ func JWTMiddleware(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, "username", claims["username"])
 		ctx = context.WithValue(ctx, "expiry", claims["expiry"])
 
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

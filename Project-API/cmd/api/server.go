@@ -56,7 +56,7 @@ func main() {
 	// 	middlewares.CORS)
 
 	routers := router.MainRouter()
-	jwtMiddleware := middlewares.ExcludePathMiddleware(middlewares.JWTMiddleware, "/execs/login")
+	jwtMiddleware := middlewares.ExcludePathMiddleware(middlewares.JWTMiddleware, "/execs/login", "/execs/forgotpassword", "/execs/resetpassword/reset")
 	secureMux := jwtMiddleware(middlewares.SecurityHeader(routers))
 
 	// Custom HTTPS Server.

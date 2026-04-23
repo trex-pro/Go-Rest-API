@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -99,6 +101,7 @@ func POSTExecsHandler(w http.ResponseWriter, r *http.Request) {
 	for _, exec := range newExecs {
 		err := helpers.CheckingBlankFields(exec)
 		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -183,7 +186,6 @@ func DELETEExecByIDHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	resp := struct {
 		Status string `json:"status"`
 		ID     int    `json:"id"`
@@ -192,6 +194,7 @@ func DELETEExecByIDHandler(w http.ResponseWriter, r *http.Request) {
 		ID:     id,
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -210,28 +213,27 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Search for user, if user exists...
-	user, err := sqlconnect.GetUserByUsername(req)
+	exec, err := sqlconnect.GetUserByUsername(req)
 	if err != nil {
 		http.Error(w, "Invalid Credentials", http.StatusInternalServerError)
 		return
 	}
 
 	// 3. Is user active
-	if user.InactiveStatus {
+	if exec.InactiveStatus {
 		http.Error(w, "Account is Inactive", http.StatusForbidden)
 		return
 	}
 
 	// 4. Verify Password
-	err = utils.VerifyPassword(req.Password, user.Password)
+	err = utils.VerifyPassword(req.Password, exec.Password)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// 5. Generate Token
-	idStr := r.PathValue("id")
-	token, err := utils.JWT(idStr, user.Username, user.Role)
+	token, err := utils.JWT(strconv.Itoa(exec.ID), exec.Username, exec.Role)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -241,6 +243,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	expiry, err := time.ParseDuration(os.Getenv("JWT_EXPIRY"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -257,7 +260,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		ID    int    `json:"id"`
 	}{
 		Token: token,
-		ID:    user.ID,
+		ID:    exec.ID,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -299,7 +302,6 @@ func UpdatePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 
 	if req.CurrentPassword == "" || req.NewPassword == "" {
-		utils.ErrorHandler(errors.New("Please Enter Password"), "Please Enter Password")
 		http.Error(w, "Please Enter Password", http.StatusBadRequest)
 		return
 	}
@@ -313,6 +315,7 @@ func UpdatePasswordHandler(w http.ResponseWriter, r *http.Request) {
 	expiry, err := time.ParseDuration(os.Getenv("JWT_EXPIRY"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -328,6 +331,73 @@ func UpdatePasswordHandler(w http.ResponseWriter, r *http.Request) {
 		Message string `json:"message"`
 	}{
 		Message: "Password Updated Successfully",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func ForgotPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid Request Body", http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+
+	if req.Email == "" {
+		http.Error(w, "Please Enter a Valid Email", http.StatusBadRequest)
+		return
+	}
+
+	err = sqlconnect.ForgotPasswordDBHandler(req.Email)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Fprintf(w, "Password Reset Link sent to %s", req.Email)
+}
+
+func ResetPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	codeString := r.PathValue("resetcode")
+
+	var req models.ResetPasswordRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid Request Body", http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+
+	if req.NewPassword == "" || req.ConfirmPassword == "" {
+		http.Error(w, "Please Fill Both Password Fields", http.StatusBadRequest)
+		return
+	}
+	if req.NewPassword != req.ConfirmPassword {
+		http.Error(w, "Passwords Don't Match", http.StatusBadRequest)
+		return
+	}
+
+	code, err := hex.DecodeString(codeString)
+	if err != nil {
+		http.Error(w, "Failed to Reset Password", http.StatusBadRequest)
+		return
+	}
+	hashedCode := sha256.Sum256(code)
+	hashedCodeString := hex.EncodeToString(hashedCode[:])
+
+	err = sqlconnect.ResetPasswordDBHandler(hashedCodeString, req.NewPassword)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	resp := struct {
+		Message string `json:"message"`
+	}{
+		Message: "Password Reset Successfully",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
