@@ -8,12 +8,15 @@ import (
 	"project-api/internal/api/helpers"
 	"project-api/internal/models"
 	"project-api/internal/repositories/sqlconnect"
+	"project-api/pkg/utils"
 	"strconv"
 )
 
 func GETStudentsHandler(w http.ResponseWriter, r *http.Request) {
 	var students []models.Student
-	students, err := sqlconnect.GETStudentsDBHandler(students, r)
+	page, limit := utils.Pagination(r)
+
+	students, totalStudents, err := sqlconnect.GETStudentsDBHandler(students, r, page, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -21,11 +24,15 @@ func GETStudentsHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp := struct {
 		Status string           `json:"status"`
+		Page   int              `json:"page"`
+		Limit  int              `json:"limit"`
 		Count  int              `json:"count"`
 		Data   []models.Student `json:"data"`
 	}{
 		Status: "SUCCESS",
-		Count:  len(students),
+		Page:   page,
+		Limit:  limit,
+		Count:  totalStudents,
 		Data:   students,
 	}
 	w.Header().Set("Content-Type", "application/json")
