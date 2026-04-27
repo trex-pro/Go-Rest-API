@@ -8,6 +8,7 @@ import (
 	"project-api/internal/api/helpers"
 	"project-api/internal/models"
 	"project-api/internal/repositories/sqlconnect"
+	"project-api/pkg/utils"
 	"strconv"
 )
 
@@ -251,6 +252,12 @@ func DELETETeacherByIDHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func GETStudentsByTeacherIDHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := utils.AuthorizeExec(r.Context().Value(utils.ContextKey("role")).(string), "Admin")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	teacherID := r.PathValue("id")
 
 	students, err := sqlconnect.GETStudentsByTeacherIDDBHandler(teacherID)

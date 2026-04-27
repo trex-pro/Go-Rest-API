@@ -10,6 +10,7 @@ import (
 	"project-api/internal/api/router"
 	"project-api/internal/repositories/sqlconnect"
 	"project-api/pkg/utils"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -36,28 +37,32 @@ func main() {
 		MinVersion: tls.VersionTLS12,
 	}
 
-	// Initialize Rate Limiter.
-	// rl := middlewares.RateLimiter(5, time.Minute)
-
-	// HPP Options.
-	// hppOptions := middlewares.HPPOptions{
-	// 	CheckBody:                true,
-	// 	CheckBodyforConetentType: "application/x-www-form-urlencoded",
-	// 	CheckQuery:               true,
-	// 	WhiteList:                []string{"sortBy", "sortOrder", "name", "age", "class"},
-	// }
-
-	// Middlewares.
-	// secureMux := applyMiddlewares(mux, middlewares.HPP(hppOptions),
-	// 	middlewares.Compression,
-	// 	middlewares.SecurityHeader,
-	// 	middlewares.ResponseTimer,
-	// 	rl.RateLimiterMiddleware,
-	// 	middlewares.CORS)
+	rl := middlewares.RateLimiter(5, time.Minute)
+	hppOptions := middlewares.HPPOptions{
+		CheckBody:                true,
+		CheckBodyforConetentType: "application/x-www-form-urlencoded",
+		CheckQuery:               true,
+		WhiteList:                []string{"sortBy", "sortOrder", "name", "age", "class"},
+	}
+	const (
+		PathLogin    = "/execs/login"
+		PathForgotPW = "/execs/forgotpassword"
+		PathResetPW  = "/execs/resetpassword/reset"
+	)
 
 	routers := router.MainRouter()
-	jwtMiddleware := middlewares.ExcludePathMiddleware(middlewares.JWTMiddleware, "/execs/login", "/execs/forgotpassword", "/execs/resetpassword/reset")
-	secureMux := jwtMiddleware(middlewares.SecurityHeader(routers))
+	jwtMiddleware := middlewares.ExcludePathMiddleware(middlewares.JWTMiddleware, PathLogin, PathForgotPW, PathResetPW)
+
+	// CORS → RateLimiter → JWT → SecurityHeader → HPP → Compression → ResponseTimer
+	secureMux := utils.ApplyMiddlewares(routers,
+		middlewares.ResponseTimer,
+		middlewares.Compression,
+		middlewares.HPP(hppOptions),
+		middlewares.SecurityHeader,
+		jwtMiddleware,
+		rl.RateLimiterMiddleware,
+		middlewares.CORS,
+	)
 
 	// Custom HTTPS Server.
 	server := http.Server{

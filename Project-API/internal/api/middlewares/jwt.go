@@ -53,10 +53,10 @@ func JWTMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Using Context for carrying claims across the API.
-		ctx := context.WithValue(r.Context(), "role", claims["role"])
-		ctx = context.WithValue(ctx, "id", claims["id"])
-		ctx = context.WithValue(ctx, "username", claims["username"])
-		ctx = context.WithValue(ctx, "expiry", claims["expiry"])
+		ctx := context.WithValue(r.Context(), utils.ContextKey("role"), claims["role"])
+		ctx = context.WithValue(ctx, utils.ContextKey("id"), claims["id"])
+		ctx = context.WithValue(ctx, utils.ContextKey("username"), claims["username"])
+		ctx = context.WithValue(ctx, utils.ContextKey("expiry"), claims["expiry"])
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
