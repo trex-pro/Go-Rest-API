@@ -1,0 +1,22 @@
+.git
+.DS_Store
+
+# Build outputs
+bin/
+dist/
+build/
+out/
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Local env/secrets (do not bake into images)
+**/.env
+
+# Logs
+*.log
+
+# Optional: keep local TLS keys out of build context if you mount them at runtime
+**/*.key
+**/key.pem

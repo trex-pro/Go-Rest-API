@@ -1,0 +1,50 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: project-api-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASS:-password}
+      MYSQL_DATABASE: ${DB_NAME:-school}
+      MYSQL_USER: ${DB_USER:-app}
+      MYSQL_PASSWORD: ${DB_PASS:-password}
+    # If you already have MySQL running locally on 3306, do not publish this port.
+    # The `api` service can still connect to MySQL over the internal Docker network.
+    # ports:
+    #   - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASS:-password}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    image: project-api:local
+    container_name: project-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: ":3000"
+      CERT_FILE: "/run/tls/cert.pem"
+      KEY_FILE: "/run/tls/key.pem"
+
+      DB_USER: ${DB_USER:-app}
+      DB_PASS: ${DB_PASS:-password}
+      DB_NAME: ${DB_NAME:-school}
+      HOST: "mysql"
+      DB_PORT: ":3306"
+
+      JWT_SECRET: ${JWT_SECRET:-change_me}
+      JWT_EXPIRY: ${JWT_EXPIRY:-15m}
+      RESET_CODE_EXPIRY: ${RESET_CODE_EXPIRY:-300s}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./cmd/api/cert.pem:/run/tls/cert.pem:ro
+      - ./cmd/api/key.pem:/run/tls/key.pem:ro
+
+volumes:
+  mysql_data:
